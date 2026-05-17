@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Discord P2P v5</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root { --bg-darkest: #1e1f22; --bg-darker: #2b2d31; --bg-dark: #313338; --text: #dbdee1; --accent: #5865f2; --success: #23a55a; }
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; background: var(--bg-dark); color: var(--text); height: 100vh; overflow: hidden; }
+        .app-container { display: flex; height: 100vh; }
+
+        /* Barre des Serveurs */
+        .sidebar-servers { width: 72px; background: var(--bg-darkest); display: flex; flex-direction: column; align-items: center; padding-top: 12px; gap: 12px; overflow-y: auto; }
+        .server-btn { width: 48px; height: 48px; background: var(--bg-dark); border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s; border: none; color: white; flex-shrink: 0; }
+        .server-btn:hover, .server-btn.active { border-radius: 30%; background: var(--accent); }
+
+        /* Sidebar Salons */
+        .sidebar-channels { width: 240px; background: var(--bg-darker); display: flex; flex-direction: column; }
+        .server-header { padding: 15px; font-weight: bold; border-bottom: 1px solid #232428; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .channel-category { padding: 20px 10px 5px 10px; color: #949ba4; font-size: 0.7em; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+        .channel-item { margin: 2px 8px; padding: 6px 8px; border-radius: 4px; cursor: pointer; color: #949ba4; display: flex; align-items: center; gap: 8px; }
+        .channel-item.active { background: #3f4147; color: white; }
+
+        /* Chat */
+        .chat-area { flex: 1; display: flex; flex-direction: column; background: var(--bg-dark); position: relative; }
+        
+        /* Rectangle ID Style Fortnite (Élargi) */
+        .fortnite-id-box { 
+            position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+            background: #111; padding: 8px 30px; border-radius: 6px; font-family: 'Courier New', monospace;
+            font-weight: bold; font-size: 0.9em; color: #fff; z-index: 10; border: 1px solid #444;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.8); cursor: pointer; transition: 0.2s;
+            white-space: nowrap; min-width: 250px; text-align: center;
+        }
+        .fortnite-id-box:hover { background: #1a1a1a; border-color: var(--accent); transform: translateX(-50%) scale(1.02); }
+
+        .messages { flex: 1; overflow-y: auto; padding: 80px 20px 20px 20px; }
+        .message { display: flex; gap: 15px; margin-bottom: 16px; animation: fadeIn 0.3s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--accent); object-fit: cover; flex-shrink: 0; }
+        .msg-img { max-width: 400px; max-height: 300px; border-radius: 8px; margin-top: 8px; border: 1px solid #444; cursor: zoom-in; }
+
+        .input-wrapper { margin: 20px; background: #383a40; border-radius: 8px; padding: 10px 15px; display: flex; gap: 15px; align-items: center; }
+        input[type="text"] { background: transparent; border: none; color: white; flex: 1; outline: none; font-size: 0.95em; }
+        .icon-btn { color: #b5bac1; cursor: pointer; transition: 0.2s; }
+        .icon-btn:hover { color: white; }
+
+        /* Sidebar Membres */
+        .sidebar-members { width: 240px; background: var(--bg-darker); padding: 20px 10px; border-left: 1px solid #3f4147; }
+        .member-item { display: flex; align-items: center; gap: 10px; padding: 6px; border-radius: 4px; }
+
+        /* Modal */
+        .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.9); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .modal-card { background: var(--bg-darker); padding: 30px; border-radius: 12px; width: 350px; text-align: center; border: 1px solid #444; }
+        .modal-card input[type="text"] { width: 100%; padding: 12px; margin-bottom: 15px; background: #1e1f22; border: 1px solid #111; color: white; border-radius: 4px; box-sizing: border-box; }
+        .btn-join { background: var(--accent); color: white; border: none; padding: 12px; border-radius: 4px; width: 100%; cursor: pointer; font-weight: bold; font-size: 1em; transition: 0.2s; }
+        .btn-join:hover { background: #4752c4; }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+<div id="setup-modal" class="modal">
+    <div class="modal-card">
+        <h2 style="margin-bottom: 20px;">Ton Profil</h2>
+        <input type="text" id="username-input" placeholder="Pseudo">
+        <div style="text-align: left; font-size: 0.8em; color: #949ba4; margin-bottom: 5px;">Image de profil :</div>
+        <input type="file" id="pfp-input" accept="image/*" style="margin-bottom: 15px; color: #949ba4; font-size: 0.8em;">
+        <div style="text-align: left; font-size: 0.8em; color: #949ba4; margin-bottom: 5px;">Couleur :</div>
+        <input type="color" id="user-color" value="#5865f2" style="height:40px; border:none; background:none; width:100%; cursor: pointer;">
+        <button class="btn-join" onclick="initApp()">Entrer dans le Multiverse</button>
+    </div>
+</div>
+
+<div class="app-container">
+    <nav class="sidebar-servers" id="ui-servers">
+        <button class="server-btn" onclick="createServer()" title="Créer un nouveau serveur"><i class="fa-solid fa-plus"></i></button>
+        <button class="server-btn" onclick="joinServerPrompt()" title="Rejoindre par ID"><i class="fa-solid fa-right-to-bracket"></i></button>
+        <div style="width:32px; height:2px; background:#35373c; margin: 4px 0;"></div>
+    </nav>
+
+    <aside class="sidebar-channels">
+        <div class="server-header" id="ui-server-name">Accueil</div>
+        <div style="flex:1; overflow-y: auto;">
+            <div class="channel-category">TEXTUELS <i class="fa-solid fa-plus icon-btn" onclick="addChannel('text')"></i></div>
+            <div id="ui-text-channels"></div>
+            <div class="channel-category">VOCAUX <i class="fa-solid fa-plus icon-btn" onclick="addChannel('voice')"></i></div>
+            <div id="ui-voice-channels"></div>
+        </div>
+        <div style="padding: 10px; background: #232428; display: flex; align-items: center; gap: 10px; border-top: 1px solid #1e1f22;">
+            <img id="my-pfp-mini" class="avatar" style="width:32px; height:32px; display:none">
+            <div style="flex:1; overflow: hidden;">
+                <div id="ui-my-name" style="font-weight:bold; font-size:0.85em; overflow:hidden; text-overflow:ellipsis;">...</div>
+                <div style="font-size:0.7em; color:var(--success)">En ligne</div>
+            </div>
+        </div>
+    </aside>
+
+    <main class="chat-area">
+        <div class="fortnite-id-box" id="ui-fortnite-btn" onclick="copyInviteLink()" title="Cliquer pour copier l'ID complet">
+            <span style="color:var(--accent); margin-right:8px;">ID:</span> <span id="ui-fortnite-id">AUCUN</span>
+        </div>
+        <div class="messages" id="ui-chat"></div>
+        <div class="input-wrapper" id="ui-input-box">
+            <label for="img-upload"><i class="fa-solid fa-circle-plus icon-btn fa-lg"></i></label>
+            <input type="file" id="img-upload" class="hidden" accept="image/*" onchange="uploadImage(this)">
+            <input type="text" id="chat-input" placeholder="Envoyer un message..." onkeypress="checkKey(event)">
+        </div>
+    </main>
+
+    <aside class="sidebar-members">
+        <div class="channel-category">MEMBRES — <span id="ui-member-count">0</span></div>
+        <div id="ui-members"></div>
+    </aside>
+</div>
+
+<script>
+    let peer, myId;
+    let myInfo = { name: '', color: '', pfp: '' };
+    let data = JSON.parse(localStorage.getItem('p2p_multi_v5')) || {};
+    let activeServerId = null;
+    let activeChannelId = null;
+    let connections = {};
+
+    async function initApp() {
+        myInfo.name = document.getElementById('username-input').value || "Anonyme";
+        myInfo.color = document.getElementById('user-color').value;
+        const file = document.getElementById('pfp-input').files[0];
+        if (file) myInfo.pfp = await toBase64(file);
+
+        document.getElementById('ui-my-name').innerText = myInfo.name;
+        if (myInfo.pfp) {
+            document.getElementById('my-pfp-mini').src = myInfo.pfp;
+            document.getElementById('my-pfp-mini').style.display = 'block';
+        }
+        document.getElementById('setup-modal').classList.add('hidden');
+
+        peer = new Peer();
+        peer.on('open', id => {
+            myId = id;
+            checkURLHash();
+            renderServers();
+        });
+
+        peer.on('connection', conn => handleConnection(conn));
+    }
+
+    function checkURLHash() {
+        const hash = window.location.hash.substring(1);
+        if (hash && hash.length > 5) {
+            joinServer(hash);
+        }
+    }
+
+    function generateShortId() {
+        return Math.random().toString(36).substring(2, 9).toUpperCase();
+    }
+
+    function copyInviteLink() {
+        if (!activeServerId) return;
+        const content = window.location.protocol === 'file:' ? activeServerId : window.location.href;
+        navigator.clipboard.writeText(content);
+        const btn = document.getElementById('ui-fortnite-btn');
+        const oldText = btn.innerHTML;
+        btn.innerHTML = "<span style='color:var(--success)'>COPIÉ !</span>";
+        setTimeout(() => btn.innerHTML = oldText, 2000);
+    }
+
+    function createServer() {
+        const n = prompt("Nom du serveur ?");
+        if (!n) return;
+        // Création d'un ID UNIQUE pour ne pas écraser l'ancien
+        const uniqueSrvId = myId + "-" + generateShortId();
+        
+        data[uniqueSrvId] = { 
+            name: n, 
+            channels: { "default": { name: "général", type: "text", logs: [] } },
+            members: { [myId]: myInfo },
+            isOwner: true
+        };
+        save();
+        switchServer(uniqueSrvId);
+    }
+
+    function switchServer(id) {
+        activeServerId = id;
+        window.location.hash = id;
+        document.getElementById('ui-fortnite-id').innerText = id;
+        document.getElementById('ui-server-name').innerText = data[id].name;
+        
+        // Sélectionner le premier salon disponible
+        activeChannelId = Object.keys(data[id].channels)[0];
+        
+        renderServers();
+        renderChannels();
+        renderMembers();
+        renderChat();
+
+        // Si on n'est pas le proprio, on essaie de se reconnecter au host
+        const hostId = id.split('-')[0];
+        if (hostId !== myId) {
+            const conn = peer.connect(hostId);
+            handleConnection(conn);
+        }
+    }
+
+    function joinServer(id) {
+        if (!data[id]) data[id] = { name: "Serveur Rejoint", channels: {}, members: {}, isOwner: false };
+        switchServer(id);
+    }
+
+    function handleConnection(conn) {
+        connections[conn.peer] = conn;
+        conn.on('open', () => {
+            conn.send({ type: 'SYNC_REQ', user: myInfo, srv: activeServerId });
+        });
+        conn.on('data', d => {
+            if (d.type === 'SYNC_REQ' && data[d.srv]) {
+                data[d.srv].members[conn.peer] = d.user;
+                conn.send({ type: 'SYNC_RES', srv: d.srv, fullData: data[d.srv] });
+                renderMembers();
+            }
+            if (d.type === 'SYNC_RES') {
+                data[d.srv] = d.fullData;
+                save();
+                if (activeServerId === d.srv) { renderChannels(); renderMembers(); renderChat(); }
+            }
+            if (d.type === 'MSG') {
+                if (data[d.srv] && data[d.srv].channels[d.ch]) {
+                    data[d.srv].channels[d.ch].logs.push(d.msg);
+                    save();
+                    if (activeChannelId === d.ch) renderChat();
+                }
+            }
+        });
+    }
+
+    function addChannel(type) {
+        if (!activeServerId) return;
+        const n = prompt("Nom du salon ?");
+        if (!n) return;
+        const id = "ch_" + Date.now();
+        data[activeServerId].channels[id] = { name: n, type, logs: [] };
+        save();
+        renderChannels();
+        // Sync avec les autres
+        Object.values(connections).forEach(c => {
+            if(c.open) c.send({ type: 'SYNC_RES', srv: activeServerId, fullData: data[activeServerId] });
+        });
+    }
+
+    function checkKey(e) {
+        if (e.key === 'Enter') {
+            const input = document.getElementById('chat-input');
+            if (input.value.trim() === "") return;
+            sendMsg(input.value, null);
+            input.value = "";
+        }
+    }
+
+    async function uploadImage(input) {
+        if (input.files[0]) {
+            const b64 = await toBase64(input.files[0]);
+            sendMsg("", b64);
+        }
+    }
+
+    function sendMsg(text, img) {
+        if (!activeChannelId) return;
+        const msg = { author: myInfo.name, color: myInfo.color, pfp: myInfo.pfp, text, img, time: Date.now() };
+        data[activeServerId].channels[activeChannelId].logs.push(msg);
+        save();
+        renderChat();
+        Object.values(connections).forEach(c => { 
+            if(c.open) c.send({ type: 'MSG', srv: activeServerId, ch: activeChannelId, msg }); 
+        });
+    }
+
+    function renderServers() {
+        const ui = document.getElementById('ui-servers');
+        ui.querySelectorAll('.srv-link').forEach(e => e.remove());
+        Object.keys(data).forEach(id => {
+            const b = document.createElement('button');
+            b.className = `server-btn srv-link ${activeServerId === id ? 'active' : ''}`;
+            b.innerText = data[id].name[0].toUpperCase();
+            b.title = data[id].name;
+            b.onclick = () => switchServer(id);
+            ui.appendChild(b);
+        });
+    }
+
+    function renderChannels() {
+        const tUi = document.getElementById('ui-text-channels');
+        const vUi = document.getElementById('ui-voice-channels');
+        tUi.innerHTML = ""; vUi.innerHTML = "";
+        if (!activeServerId) return;
+        Object.keys(data[activeServerId].channels).forEach(id => {
+            const ch = data[activeServerId].channels[id];
+            const div = document.createElement('div');
+            div.className = `channel-item ${activeChannelId === id ? 'active' : ''}`;
+            div.innerHTML = `<i class="fa-solid fa-${ch.type === 'text' ? 'hashtag' : 'volume-high'}"></i> ${ch.name}`;
+            div.onclick = () => { activeChannelId = id; renderChannels(); renderChat(); };
+            (ch.type === 'text' ? tUi : vUi).appendChild(div);
+        });
+    }
+
+    function renderMembers() {
+        const ui = document.getElementById('ui-members');
+        ui.innerHTML = "";
+        if (!activeServerId) return;
+        const members = data[activeServerId].members || {};
+        const keys = Object.keys(members);
+        document.getElementById('ui-member-count').innerText = keys.length;
+        keys.forEach(id => {
+            const m = members[id];
+            ui.innerHTML += `<div class="member-item">
+                <img src="${m.pfp || ''}" class="avatar" style="width:24px; height:24px; background:${m.color}">
+                <b style="color:${m.color}">${m.name} ${id === myId ? '(Moi)' : ''}</b>
+            </div>`;
+        });
+    }
+
+    function renderChat() {
+        const ui = document.getElementById('ui-chat');
+        ui.innerHTML = "";
+        const chan = data[activeServerId]?.channels[activeChannelId];
+        if (!chan) return;
+        if (chan.type === 'voice') {
+            ui.innerHTML = `<div style="padding:40px; text-align:center; color:#949ba4"><i class="fa-solid fa-microphone fa-3x"></i><br><br>Salon Vocal Activé</div>`;
+            return;
+        }
+        chan.logs.forEach(m => {
+            ui.innerHTML += `<div class="message">
+                <img src="${m.pfp || ''}" class="avatar" style="background:${m.color}">
+                <div>
+                    <b style="color:${m.color}">${m.author}</b> <small style="color:#949ba4; margin-left:5px">${new Date(m.time).toLocaleTimeString()}</small>
+                    <div style="margin-top:3px;">${m.text}</div>
+                    ${m.img ? `<img src="${m.img}" class="msg-img">` : ''}
+                </div>
+            </div>`;
+        });
+        ui.scrollTop = ui.scrollHeight;
+    }
+
+    function save() { localStorage.setItem('p2p_multi_v5', JSON.stringify(data)); }
+    function toBase64(file) { return new Promise(r => { const reader = new FileReader(); reader.onload = () => r(reader.result); reader.readAsDataURL(file); }); }
+    function joinServerPrompt() { const id = prompt("ID complet du serveur :"); if(id) joinServer(id); }
+</script>
+</body>
+</html>
