@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Discord P2P Ultimate</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root { --bg-darkest: #1e1f22; --bg-darker: #2b2d31; --bg-dark: #313338; --text: #dbdee1; --accent: #5865f2; --success: #23a55a; }
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; background: var(--bg-dark); color: var(--text); height: 100vh; overflow: hidden; }
+        
+        .app-container { display: flex; height: 100vh; }
+
+        /* Sidebar Serveurs */
+        .sidebar-servers { width: 72px; background: var(--bg-darkest); display: flex; flex-direction: column; align-items: center; padding-top: 12px; gap: 12px; }
+        .server-btn { width: 48px; height: 48px; background: var(--bg-dark); border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s; border: none; color: white; }
+        .server-btn:hover, .server-btn.active { border-radius: 30%; background: var(--accent); }
+
+        /* Sidebar Salons */
+        .sidebar-channels { width: 240px; background: var(--bg-darker); display: flex; flex-direction: column; }
+        .server-header { padding: 15px; font-weight: bold; border-bottom: 1px solid #232428; }
+        .channel-category { padding: 20px 10px 5px 10px; color: #949ba4; font-size: 0.7em; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+        .channel-item { margin: 2px 8px; padding: 6px 8px; border-radius: 4px; cursor: pointer; color: #949ba4; display: flex; align-items: center; gap: 8px; }
+        .channel-item.active { background: #3f4147; color: white; }
+
+        /* Chat Area */
+        .chat-area { flex: 1; display: flex; flex-direction: column; background: var(--bg-dark); position: relative; }
+        
+        /* Rectangle ID Style Fortnite */
+        .fortnite-id-box { 
+            position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+            background: #111; padding: 6px 25px; border-radius: 4px; font-family: monospace;
+            font-weight: bold; font-size: 0.85em; color: #fff; z-index: 10; border: 1px solid #333;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.6); display: flex; gap: 10px; align-items: center;
+        }
+
+        .messages { flex: 1; overflow-y: auto; padding: 70px 20px 20px 20px; }
+        .message { display: flex; gap: 15px; margin-bottom: 16px; }
+        .avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--accent); object-fit: cover; }
+        .msg-img { max-width: 400px; max-height: 300px; border-radius: 8px; margin-top: 8px; border: 1px solid #444; }
+
+        .input-wrapper { margin: 20px; background: #383a40; border-radius: 8px; padding: 10px 15px; display: flex; gap: 15px; align-items: center; }
+        input[type="text"] { background: transparent; border: none; color: white; flex: 1; outline: none; }
+        .icon-btn { color: #b5bac1; cursor: pointer; transition: 0.2s; }
+        .icon-btn:hover { color: white; }
+
+        /* Sidebar Membres */
+        .sidebar-members { width: 240px; background: var(--bg-darker); padding: 20px 10px; border-left: 1px solid #3f4147; }
+        .member-item { display: flex; align-items: center; gap: 10px; padding: 6px; }
+
+        /* Setup Modal */
+        .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.95); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .modal-card { background: var(--bg-darker); padding: 30px; border-radius: 8px; width: 350px; text-align: center; border: 1px solid #444; }
+        .modal-card input { width: 90%; padding: 12px; margin-bottom: 15px; background: #1e1f22; border: none; color: white; border-radius: 4px; }
+        .btn-join { background: var(--accent); color: white; border: none; padding: 12px; border-radius: 4px; width: 100%; cursor: pointer; font-weight: bold; }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+<div id="setup-modal" class="modal">
+    <div class="modal-card">
+        <h2 style="margin-bottom: 20px;">Configuration Profil</h2>
+        <input type="text" id="username-input" placeholder="Ton pseudo...">
+        <div style="text-align: left; font-size: 0.8em; color: #949ba4; margin-bottom: 5px;">Image de profil :</div>
+        <input type="file" id="pfp-input" accept="image/*">
+        <div style="text-align: left; font-size: 0.8em; color: #949ba4; margin-bottom: 5px;">Couleur du nom :</div>
+        <input type="color" id="user-color" value="#5865f2" style="height: 40px; cursor: pointer; padding: 0; background: none;">
+        <button class="btn-join" onclick="initApp()">Lancer Discord P2P</button>
+    </div>
+</div>
+
+<div class="app-container">
+    <nav class="sidebar-servers" id="ui-servers">
+        <button class="server-btn" onclick="createServer()" title="Créer un serveur"><i class="fa-solid fa-plus"></i></button>
+        <button class="server-btn" onclick="joinServerPrompt()" title="Rejoindre un ID"><i class="fa-solid fa-right-to-bracket"></i></button>
+    </nav>
+
+    <aside class="sidebar-channels">
+        <div class="server-header" id="ui-server-name">Accueil</div>
+        <div style="flex:1; overflow-y: auto;">
+            <div class="channel-category">SALONS TEXTUELS <i class="fa-solid fa-plus icon-btn" onclick="addChannel('text')"></i></div>
+            <div id="ui-text-channels"></div>
+            <div class="channel-category">SALONS VOCAUX <i class="fa-solid fa-plus icon-btn" onclick="addChannel('voice')"></i></div>
+            <div id="ui-voice-channels"></div>
+        </div>
+        <div style="padding: 10px; background: #232428; display: flex; align-items: center; gap: 10px;">
+            <img id="my-pfp-mini" class="avatar" style="width:32px; height:32px; display:none">
+            <div style="flex:1; overflow: hidden;">
+                <div id="ui-my-name" style="font-weight:bold; font-size:0.85em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">...</div>
+                <div style="font-size:0.7em; color:var(--success)">En ligne</div>
+            </div>
+            <i class="fa-solid fa-link icon-btn" onclick="copyInviteLink()" title="Copier le lien d'invitation"></i>
+        </div>
+    </aside>
+
+    <main class="chat-area">
+        <div class="fortnite-id-box">
+            <span style="color:#5865f2">ID SERVEUR :</span>
+            <span id="ui-fortnite-id">AUCUN</span>
+        </div>
+        <div class="messages" id="ui-chat"></div>
+        <div class="input-wrapper" id="ui-input-box">
+            <label for="img-upload"><i class="fa-solid fa-circle-plus icon-btn fa-lg"></i></label>
+            <input type="file" id="img-upload" class="hidden" accept="image/*" onchange="uploadImage(this)">
+            <input type="text" id="chat-input" placeholder="Envoyer un message..." onkeypress="checkKey(event)">
+        </div>
+    </main>
+
+    <aside class="sidebar-members">
+        <div class="channel-category">MEMBRES — <span id="ui-member-count">0</span></div>
+        <div id="ui-members"></div>
+    </aside>
+</div>
+
+<script>
+    let peer, myId;
+    let myInfo = { name: '', color: '', pfp: '' };
+    let data = JSON.parse(localStorage.getItem('p2p_final_v1')) || {};
+    let activeServerId = null;
+    let activeChannelId = null;
+    let connections = {};
+
+    // INITIALISATION
+    async function initApp() {
+        myInfo.name = document.getElementById('username-input').value || "Anonyme";
+        myInfo.color = document.getElementById('user-color').value;
+        const file = document.getElementById('pfp-input').files[0];
+        if (file) myInfo.pfp = await toBase64(file);
+
+        document.getElementById('ui-my-name').innerText = myInfo.name;
+        if (myInfo.pfp) {
+            document.getElementById('my-pfp-mini').src = myInfo.pfp;
+            document.getElementById('my-pfp-mini').style.display = 'block';
+        }
+        document.getElementById('setup-modal').classList.add('hidden');
+
+        peer = new Peer();
+        peer.on('open', id => {
+            myId = id;
+            checkURLHash();
+            renderServers();
+        });
+
+        peer.on('connection', conn => handleConnection(conn));
+        peer.on('call', call => {
+            navigator.mediaDevices.getUserMedia({audio: true}).then(s => {
+                call.answer(s);
+                call.on('stream', rs => { const a = new Audio(); a.srcObject = rs; a.play(); });
+            });
+        });
+    }
+
+    // GESTION URL (LIEN AUTO)
+    function checkURLHash() {
+        const hash = window.location.hash.substring(1);
+        if (hash && hash.length > 5) {
+            if (!data[hash]) data[hash] = { name: "Serveur Invité", channels: {}, members: {} };
+            switchServer(hash);
+            connectToHost(hash);
+        }
+    }
+
+    function copyInviteLink() {
+        if (!activeServerId) return;
+        const link = window.location.origin + window.location.pathname + "#" + activeServerId;
+        navigator.clipboard.writeText(link);
+        alert("Lien d'invitation copié !");
+    }
+
+    // SERVEURS ET SALONS
+    function createServer() {
+        const n = prompt("Nom du serveur ?");
+        if (!n) return;
+        const id = myId; // On est l'hôte
+        data[id] = { 
+            name: n, 
+            channels: { "default": { name: "général", type: "text", logs: [] } },
+            members: { [myId]: myInfo }
+        };
+        save();
+        switchServer(id);
+    }
+
+    function switchServer(id) {
+        activeServerId = id;
+        window.location.hash = id;
+        document.getElementById('ui-fortnite-id').innerText = id;
+        document.getElementById('ui-server-name').innerText = data[id].name;
+        
+        activeChannelId = Object.keys(data[id].channels)[0];
+        renderServers();
+        renderChannels();
+        renderMembers();
+        renderChat();
+    }
+
+    function addChannel(type) {
+        if (!activeServerId) return;
+        const n = prompt("Nom du salon ?");
+        if (!n) return;
+        const id = "ch_" + Date.now();
+        data[activeServerId].channels[id] = { name: n, type, logs: [] };
+        save();
+        renderChannels();
+        syncData();
+    }
+
+    // COMMUNICATION
+    function connectToHost(id) {
+        const conn = peer.connect(id);
+        handleConnection(conn);
+    }
+
+    function handleConnection(conn) {
+        connections[conn.peer] = conn;
+        conn.on('open', () => {
+            conn.send({ type: 'SYNC_REQ', user: myInfo, srv: activeServerId });
+        });
+        conn.on('data', d => {
+            if (d.type === 'SYNC_REQ') {
+                if (data[d.srv]) {
+                    data[d.srv].members[conn.peer] = d.user;
+                    conn.send({ type: 'SYNC_RES', srv: d.srv, fullData: data[d.srv] });
+                    renderMembers();
+                }
+            }
+            if (d.type === 'SYNC_RES') {
+                data[d.srv] = d.fullData;
+                save();
+                if (activeServerId === d.srv) { renderChannels(); renderMembers(); renderChat(); }
+            }
+            if (d.type === 'MSG') {
+                if (data[d.srv] && data[d.srv].channels[d.ch]) {
+                    data[d.srv].channels[d.ch].logs.push(d.msg);
+                    save();
+                    if (activeChannelId === d.ch) renderChat();
+                }
+            }
+        });
+    }
+
+    // CHAT ET IMAGES
+    function checkKey(e) {
+        if (e.key === 'Enter') {
+            const input = document.getElementById('chat-input');
+            if (input.value.trim() === "") return;
+            sendMsg(input.value, null);
+            input.value = "";
+        }
+    }
+
+    async function uploadImage(input) {
+        if (input.files[0]) {
+            const b64 = await toBase64(input.files[0]);
+            sendMsg("", b64);
+        }
+    }
+
+    function sendMsg(text, img) {
+        if (!activeChannelId) return;
+        const msg = { author: myInfo.name, color: myInfo.color, pfp: myInfo.pfp, text, img, time: Date.now() };
+        data[activeServerId].channels[activeChannelId].logs.push(msg);
+        save();
+        renderChat();
+        broadcast({ type: 'MSG', srv: activeServerId, ch: activeChannelId, msg });
+    }
+
+    function broadcast(obj) {
+        Object.values(connections).forEach(c => { if(c.open) c.send(obj); });
+    }
+
+    function syncData() {
+        broadcast({ type: 'SYNC_RES', srv: activeServerId, fullData: data[activeServerId] });
+    }
+
+    // RENDU UI
+    function renderServers() {
+        const ui = document.getElementById('ui-servers');
+        ui.querySelectorAll('.srv-link').forEach(e => e.remove());
+        Object.keys(data).forEach(id => {
+            const b = document.createElement('button');
+            b.className = `server-btn srv-link ${activeServerId === id ? 'active' : ''}`;
+            b.innerText = data[id].name[0].toUpperCase();
+            b.onclick = () => switchServer(id);
+            ui.appendChild(b);
+        });
+    }
+
+    function renderChannels() {
+        const tUi = document.getElementById('ui-text-channels');
+        const vUi = document.getElementById('ui-voice-channels');
+        tUi.innerHTML = ""; vUi.innerHTML = "";
+        if (!activeServerId) return;
+        Object.keys(data[activeServerId].channels).forEach(id => {
+            const ch = data[activeServerId].channels[id];
+            const div = document.createElement('div');
+            div.className = `channel-item ${activeChannelId === id ? 'active' : ''}`;
+            div.innerHTML = `<i class="fa-solid fa-${ch.type === 'text' ? 'hashtag' : 'volume-high'}"></i> ${ch.name}`;
+            div.onclick = () => { 
+                activeChannelId = id; 
+                renderChannels(); 
+                if(ch.type === 'voice') startVocal(); else renderChat(); 
+            };
+            (ch.type === 'text' ? tUi : vUi).appendChild(div);
+        });
+    }
+
+    function renderMembers() {
+        const ui = document.getElementById('ui-members');
+        ui.innerHTML = "";
+        if (!activeServerId) return;
+        const members = data[activeServerId].members || {};
+        if (!members[myId]) members[myId] = myInfo;
+        
+        const keys = Object.keys(members);
+        document.getElementById('ui-member-count').innerText = keys.length;
+        keys.forEach(id => {
+            const m = members[id];
+            ui.innerHTML += `<div class="member-item">
+                <img src="${m.pfp || ''}" class="avatar" style="width:24px; height:24px; background:${m.color}">
+                <b style="color:${m.color}">${m.name} ${id === myId ? '(Moi)' : ''}</b>
+            </div>`;
+        });
+    }
+
+    function renderChat() {
+        const ui = document.getElementById('ui-chat');
+        ui.innerHTML = "";
+        const chan = data[activeServerId].channels[activeChannelId];
+        if (!chan || chan.type === 'voice') {
+            document.getElementById('ui-input-box').classList.add('hidden');
+            if(chan) ui.innerHTML = `<div style="padding:20px; color:#949ba4">Vous êtes dans un salon vocal. Le micro est activé.</div>`;
+            return;
+        }
+        document.getElementById('ui-input-box').classList.remove('hidden');
+        chan.logs.forEach(m => {
+            ui.innerHTML += `<div class="message">
+                <img src="${m.pfp || ''}" class="avatar" style="background:${m.color}">
+                <div>
+                    <b style="color:${m.color}">${m.author}</b> <small style="color:#949ba4; margin-left:8px">${new Date(m.time).toLocaleTimeString()}</small>
+                    <div>${m.text}</div>
+                    ${m.img ? `<img src="${m.img}" class="msg-img">` : ''}
+                </div>
+            </div>`;
+        });
+        ui.scrollTop = ui.scrollHeight;
+    }
+
+    function startVocal() {
+        navigator.mediaDevices.getUserMedia({audio: true}).then(s => {
+            Object.keys(connections).forEach(id => peer.call(id, s));
+        });
+    }
+
+    // UTILS
+    function save() { localStorage.setItem('p2p_final_v1', JSON.stringify(data)); }
+    function toBase64(file) { return new Promise(r => { const reader = new FileReader(); reader.onload = () => r(reader.result); reader.readAsDataURL(file); }); }
+    function joinServerPrompt() { const id = prompt("ID du serveur :"); if(id) { if(!data[id]) data[id]={name:"Serveur Rejoint",channels:{},members:{}}; switchServer(id); connectToHost(id); }}
+</script>
+</body>
+</html>
